@@ -1,4 +1,3 @@
-/* eslint-disable react/sort-prop-types */
 import React, { Component } from 'react';
 import PropTypes from 'prop-types';
 import { connect } from 'react-redux';
@@ -9,23 +8,25 @@ import {
   ControlLabel,
   Form,
   FormControl,
-  FormGroup
+  FormGroup,
+  Alert
 } from '@freecodecamp/react-bootstrap';
 import { injectStripe } from 'react-stripe-elements';
 
 import StripeCardForm from './StripeCardForm';
 import DonateCompletion from './DonateCompletion';
-import { postChargeStripe } from '../../../utils/ajax';
-import { userSelector } from '../../../redux';
+import { postChargeStripe } from '../../utils/ajax';
+import { userSelector } from '../../redux';
 
 const propTypes = {
-  showCloseBtn: PropTypes.func,
   defaultTheme: PropTypes.string,
   donationAmount: PropTypes.number.isRequired,
   donationDuration: PropTypes.string.isRequired,
   email: PropTypes.string,
   getDonationButtonLabel: PropTypes.func.isRequired,
+  handleProcessing: PropTypes.func,
   isSignedIn: PropTypes.bool,
+  showCloseBtn: PropTypes.func,
   stripe: PropTypes.shape({
     createToken: PropTypes.func.isRequired
   }),
@@ -52,16 +53,18 @@ class DonateFormChildViewForHOC extends Component {
       ...initialState,
       donationAmount: this.props.donationAmount,
       donationDuration: this.props.donationDuration,
+      isSubmissionValid: null,
       email: null,
+      isEmailValid: true,
       isFormValid: false
     };
 
-    this.getUserEmail = this.getUserEmail.bind(this);
     this.getValidationState = this.getValidationState.bind(this);
     this.handleEmailChange = this.handleEmailChange.bind(this);
     this.handleSubmit = this.handleSubmit.bind(this);
     this.postDonation = this.postDonation.bind(this);
     this.resetDonation = this.resetDonation.bind(this);
+    this.handleEmailBlur = this.handleEmailBlur.bind(this);
   }
 
   getUserEmail() {
@@ -79,14 +82,28 @@ class DonateFormChildViewForHOC extends Component {
 
   handleEmailChange(e) {
     const newValue = e.target.value;
-    return this.setState(state => ({
-      ...state,
-      email: newValue
-    }));
+    return this.setState({
+      email: newValue,
+      // reset validation
+      isEmailValid: true
+    });
   }
 
   handleSubmit(e) {
     e.preventDefault();
+
+    const { isEmailValid, isFormValid } = this.state;
+
+    if ((!isEmailValid, !isFormValid)) {
+      return this.setState({
+        isSubmissionValid: false
+      });
+    }
+
+    this.setState({
+      isSubmissionValid: null
+    });
+
     const email = this.getUserEmail();
     if (!email || !isEmail(email)) {
       return this.setState(state => ({
@@ -130,8 +147,11 @@ class DonateFormChildViewForHOC extends Component {
 
     // change the donation modal button label to close
     // or display the close button for the cert donation section
-    if (this.props.showCloseBtn) {
-      this.props.showCloseBtn();
+    if (this.props.handleProcessing) {
+      this.props.handleProcessing(
+        this.state.donationDuration,
+        Math.round(this.state.donationAmount / 100)
+      );
     }
 
     return postChargeStripe({
@@ -179,21 +199,54 @@ class DonateFormChildViewForHOC extends Component {
     return <DonateCompletion {...props} />;
   }
 
+  handleEmailBlur() {
+    const emailValue = this.state.email;
+    const newValidation = isEmail(emailValue);
+    return this.setState({
+      isEmailValid: newValidation
+    });
+  }
+
+  renderErrorMessage() {
+    const { isEmailValid, isFormValid } = this.state;
+    let message = '';
+    if (!isEmailValid && !isFormValid)
+      message = (
+        <p>
+          Please enter valid email address, credit card number, and expiration
+          date.
+        </p>
+      );
+    else if (!isEmailValid)
+      message = <p>Please enter a valid email address.</p>;
+    else
+      message = (
+        <p>Please enter valid credit card number and expiration date.</p>
+      );
+
+    return <Alert bsStyle='danger'>{message}</Alert>;
+  }
+
   renderDonateForm() {
-    const { isFormValid } = this.state;
+    const { isEmailValid, isSubmissionValid, email } = this.state;
     const { getDonationButtonLabel, theme, defaultTheme } = this.props;
+
     return (
       <Form className='donation-form' onSubmit={this.handleSubmit}>
+        <div>{isSubmissionValid !== null ? this.renderErrorMessage() : ''}</div>
         <FormGroup className='donation-email-container'>
           <ControlLabel>
             Email (we'll send you a tax-deductible donation receipt):
           </ControlLabel>
           <FormControl
+            className={!isEmailValid && email ? 'email--invalid' : ''}
+            key='3'
+            onBlur={this.handleEmailBlur}
             onChange={this.handleEmailChange}
             placeholder='me@example.com'
             required={true}
             type='text'
-            value={this.getUserEmail()}
+            value={this.state.email || ''}
           />
         </FormGroup>
         <StripeCardForm
@@ -203,7 +256,7 @@ class DonateFormChildViewForHOC extends Component {
         <Button
           block={true}
           bsStyle='primary'
-          disabled={!isFormValid}
+          className='btn-cta'
           id='confirm-donation-btn'
           type='submit'
         >
@@ -213,8 +266,11 @@ class DonateFormChildViewForHOC extends Component {
     );
   }
 
-  componentWillReceiveProps({ donationAmount, donationDuration }) {
+  componentWillReceiveProps({ donationAmount, donationDuration, email }) {
     this.setState({ donationAmount, donationDuration });
+    if (this.state.email === null && email) {
+      this.setState({ email });
+    }
   }
 
   render() {

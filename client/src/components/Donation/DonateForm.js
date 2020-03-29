@@ -1,9 +1,8 @@
-import React, { Component } from 'react';
+import React, { Component, Fragment } from 'react';
 import PropTypes from 'prop-types';
 import { connect } from 'react-redux';
 import { createSelector } from 'reselect';
 import {
-  Button,
   Tabs,
   Tab,
   Row,
@@ -18,24 +17,24 @@ import {
   durationsConfig,
   defaultAmount,
   defaultStateConfig
-} from '../../../../../config/donation-settings';
-import { apiLocation } from '../../../../config/env.json';
-import Spacer from '../../helpers/Spacer';
+} from '../../../../config/donation-settings';
+import Spacer from '../helpers/Spacer';
 import DonateFormChildViewForHOC from './DonateFormChildViewForHOC';
+import PaypalButton from './PaypalButton';
+import DonateCompletion from './DonateCompletion';
 import {
-  userSelector,
   isSignedInSelector,
   signInLoadingSelector,
   hardGoTo as navigate
-} from '../../../redux';
+} from '../../redux';
 
-import '../Donation.css';
-import DonateCompletion from './DonateCompletion.js';
+import './Donation.css';
 
 const numToCommas = num =>
   num.toString().replace(/(\d)(?=(\d{3})+(?!\d))/g, '$1,');
 
 const propTypes = {
+  handleProcessing: PropTypes.func,
   isDonating: PropTypes.bool,
   isSignedIn: PropTypes.bool,
   navigate: PropTypes.func.isRequired,
@@ -46,23 +45,23 @@ const propTypes = {
 };
 
 const mapStateToProps = createSelector(
-  userSelector,
   signInLoadingSelector,
   isSignedInSelector,
-  ({ isDonating }, showLoading, isSignedIn) => ({
-    isDonating,
+  (showLoading, isSignedIn) => ({
     isSignedIn,
     showLoading
   })
 );
-
 const mapDispatchToProps = {
   navigate
 };
 
-const createOnClick = navigate => e => {
-  e.preventDefault();
-  return navigate(`${apiLocation}/signin?returnTo=donate`);
+const initialState = {
+  donationState: {
+    processing: false,
+    success: false,
+    error: ''
+  }
 };
 
 class DonateForm extends Component {
@@ -73,17 +72,30 @@ class DonateForm extends Component {
     this.amounts = amountsConfig;
 
     this.state = {
+      ...initialState,
       ...defaultStateConfig,
-      processing: false,
-      isDonating: this.props.isDonating
+      processing: false
     };
 
+    this.onDonationStateChange = this.onDonationStateChange.bind(this);
     this.getActiveDonationAmount = this.getActiveDonationAmount.bind(this);
     this.getDonationButtonLabel = this.getDonationButtonLabel.bind(this);
     this.handleSelectAmount = this.handleSelectAmount.bind(this);
     this.handleSelectDuration = this.handleSelectDuration.bind(this);
-    this.handleSelectPaymentType = this.handleSelectPaymentType.bind(this);
     this.hideAmountOptionsCB = this.hideAmountOptionsCB.bind(this);
+    this.resetDonation = this.resetDonation.bind(this);
+  }
+
+  onDonationStateChange(success, processing, error) {
+    this.setState(state => ({
+      ...state,
+      donationState: {
+        ...state.donationState,
+        processing: processing,
+        success: success,
+        error: error
+      }
+    }));
   }
 
   getActiveDonationAmount(durationSelected, amountSelected) {
@@ -122,12 +134,6 @@ class DonateForm extends Component {
 
   handleSelectAmount(donationAmount) {
     this.setState({ donationAmount });
-  }
-
-  handleSelectPaymentType(e) {
-    this.setState({
-      paymentType: e.currentTarget.value
-    });
   }
 
   renderAmountButtons(duration) {
@@ -196,61 +202,87 @@ class DonateForm extends Component {
   }
 
   renderDonationOptions() {
-    const { stripe } = this.props;
-    const { donationAmount, donationDuration, paymentType } = this.state;
+    const { stripe, handleProcessing } = this.props;
+    const { donationAmount, donationDuration } = this.state;
     return (
       <div>
-        {paymentType === 'Card' ? (
-          <StripeProvider stripe={stripe}>
-            <Elements>
-              <DonateFormChildViewForHOC
-                donationAmount={donationAmount}
-                donationDuration={donationDuration}
-                getDonationButtonLabel={this.getDonationButtonLabel}
-                hideAmountOptionsCB={this.hideAmountOptionsCB}
-              />
-            </Elements>
-          </StripeProvider>
-        ) : (
-          <p>
-            PayPal is currently unavailable. Please use a Credit/Debit card
-            instead.
-          </p>
-        )}
+        <StripeProvider stripe={stripe}>
+          <Elements>
+            <DonateFormChildViewForHOC
+              defaultTheme='default'
+              donationAmount={donationAmount}
+              donationDuration={donationDuration}
+              getDonationButtonLabel={this.getDonationButtonLabel}
+              handleProcessing={handleProcessing}
+              hideAmountOptionsCB={this.hideAmountOptionsCB}
+            />
+          </Elements>
+        </StripeProvider>
+        <Spacer size={2} />
       </div>
     );
   }
 
+  resetDonation() {
+    return this.setState({ ...initialState });
+  }
+
+  renderCompletion(props) {
+    return <DonateCompletion {...props} />;
+  }
+
   render() {
-    const { isSignedIn, navigate, showLoading, isDonating } = this.props;
-
-    if (isDonating) {
-      return (
-        <Row>
-          <Col sm={10} smOffset={1} xs={12}>
-            <DonateCompletion success={true} />
-          </Col>
-        </Row>
-      );
+    const { donationAmount, donationDuration } = this.state;
+    const { handleProcessing, isSignedIn } = this.props;
+    const {
+      donationState: { processing, success, error }
+    } = this.state;
+    const subscriptionPayment = donationDuration !== 'onetime';
+    if (processing || success || error) {
+      return this.renderCompletion({
+        processing,
+        success,
+        error,
+        reset: this.resetDonation
+      });
     }
-
     return (
       <Row>
         <Col sm={10} smOffset={1} xs={12}>
           {this.renderDurationAmountOptions()}
         </Col>
         <Col sm={10} smOffset={1} xs={12}>
-          {!showLoading && !isSignedIn ? (
-            <Button
-              bsStyle='default'
-              className='btn btn-block'
-              onClick={createOnClick(navigate)}
-            >
-              Become a supporter
-            </Button>
+          {subscriptionPayment ? (
+            <Fragment>
+              <b>
+                Confirm your donation of ${donationAmount / 100} /{' '}
+                {donationDuration} with PayPal:
+              </b>
+              <Spacer />
+            </Fragment>
           ) : (
-            this.renderDonationOptions()
+            ''
           )}
+          <PaypalButton
+            donationAmount={donationAmount}
+            donationDuration={donationDuration}
+            handleProcessing={handleProcessing}
+            onDonationStateChange={this.onDonationStateChange}
+            skipAddDonation={!isSignedIn}
+          />
+        </Col>
+
+        <Col sm={10} smOffset={1} xs={12}>
+          {subscriptionPayment ? (
+            <Fragment>
+              <Spacer />
+              <b>Or donate with a credit card:</b>
+              <Spacer />
+            </Fragment>
+          ) : (
+            ''
+          )}
+          {this.renderDonationOptions()}
         </Col>
       </Row>
     );

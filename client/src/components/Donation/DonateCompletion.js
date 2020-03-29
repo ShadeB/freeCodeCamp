@@ -3,7 +3,7 @@ import PropTypes from 'prop-types';
 import { Alert, Button } from '@freecodecamp/react-bootstrap';
 import Spinner from 'react-spinkit';
 
-import '../Donation.css';
+import './Donation.css';
 
 const propTypes = {
   error: PropTypes.string,
@@ -37,7 +37,7 @@ function DonateCompletion({ processing, reset, success, error = null }) {
         {success && (
           <div>
             <p>
-              Your donation will support free technology education for people
+              Your donations will support free technology education for people
               all over the world.
             </p>
           </div>
